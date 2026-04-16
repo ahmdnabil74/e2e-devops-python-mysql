@@ -1,25 +1,25 @@
 # Create RDS Cluster
-resource "aws_rds_cluster" "rds_cluster" {
-  cluster_identifier      = var.rds_cluster_name
-  engine                  = var.rds_engine
-  engine_version          = var.rds_engine_version
-  #  availability_zones      = ["us-west-2a", "us-west-2b", "us-west-2c"]
-  database_name           = var.db_name
-  master_username         = var.db_username
-  master_password         = random_password.password.result
-  backup_retention_period = 0
-  preferred_backup_window = "07:00-09:00"
+resource "aws_db_instance" "rds" {
+  identifier        = var.rds_instance_name
+  allocated_storage = 20
 
-  vpc_security_group_ids = [aws_security_group.rds_sg.id] ##
+  engine            = var.rds_engine        # mysql
+  engine_version    = var.rds_engine_version # 8.0
 
-  db_subnet_group_name = aws_db_subnet_group.rds_subnet_group.name ##
+  instance_class    = "db.t3.micro"
 
-  skip_final_snapshot = true ##
+  db_name           = var.db_name
+  username          = var.db_username
+  password          = random_password.password.result
 
-  final_snapshot_identifier = "${var.rds_cluster_name}-snapshot" ##
+  vpc_security_group_ids = [aws_security_group.rds_sg.id]
+  db_subnet_group_name   = aws_db_subnet_group.rds_subnet_group.name
+
+  skip_final_snapshot = true
+  publicly_accessible = true
 
   tags = {
-    Name = "${var.rds_cluster_name}" ##
+    Name = var.rds_instance_name
   }
 }
 

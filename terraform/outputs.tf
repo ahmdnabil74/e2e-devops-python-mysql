@@ -8,6 +8,10 @@ output "cluster_security_group_id" {
   value       = module.eks.cluster_security_group_id
 }
 
+############################################
+# ECR
+############################################
+
 output "ecr_app_repository_name" {
   value = aws_ecr_repository.ecr_repo.name
 }
@@ -16,13 +20,21 @@ output "ecr_db_repository_name" {
   value = aws_ecr_repository.ecr_repo_2.name
 }
 
-output "rds_cluster_endpoint" {
+############################################
+# RDS (FIXED)
+############################################
+
+output "rds_endpoint" {
   value = aws_rds_cluster.rds_cluster.endpoint
 }
 
-output "rds_cluster_port" {
+output "rds_port" {
   value = aws_rds_cluster.rds_cluster.port
 }
+
+############################################
+# DB Credentials
+############################################
 
 output "db_username" {
   sensitive = true
@@ -32,9 +44,4 @@ output "db_username" {
 output "db_password" {
   sensitive = true
   value     = random_password.password.result
-}
-
-output "final_snapshot_name" {
-  description = "The name of the final snapshot created when the RDS cluster is deleted"
-  value       = aws_rds_cluster.rds_cluster.final_snapshot_identifier
 }

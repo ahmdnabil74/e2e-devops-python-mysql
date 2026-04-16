@@ -1,3 +1,264 @@
+
+############################################
+# DATA SOURCES
+############################################
+
+data "aws_availability_zones" "available" {}
+
+data "aws_eks_cluster_auth" "cluster" {
+  name = module.eks.cluster_id
+}
+
+data "aws_caller_identity" "current" {}
+
+############################################
+# LOCALS
+############################################
+
+locals {
+  cluster_name = "${var.name_prefix}-${var.environment}"
+
+  autoscaler_service_account_namespace = "kube-system"
+  autoscaler_service_account_name      = "cluster-autoscaler-aws"
+
+  admin_user_map_users = [
+    for admin_user in var.admin_users : {
+      userarn  = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:user/${admin_user}"
+      username = admin_user
+      groups   = ["system:masters"]
+    }
+  ]
+
+  developer_user_map_users = [
+    for developer_user in var.developer_users : {
+      userarn  = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:user/${developer_user}"
+      username = developer_user
+      groups   = ["${var.name_prefix}-developers"]
+    }
+  ]
+}
+
+############################################
+# PROVIDERS
+############################################
+
+provider "aws" {
+  region  = var.region
+  profile = "default"
+}
+
+provider "kubernetes" {
+  host                   = module.eks.cluster_endpoint
+  cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
+  token                  = data.aws_eks_cluster_auth.cluster.token
+}
+
+provider "helm" {
+  kubernetes {
+    host                   = module.eks.cluster_endpoint
+    cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
+    token                  = data.aws_eks_cluster_auth.cluster.token
+  }
+}
+
+############################################
+# EIP (NAT)
+############################################
+
+resource "aws_eip" "nat_gw_elastic_ip" {
+  domain = "vpc"
+
+  tags = {
+    Name        = "${local.cluster_name}-nat-eip"
+    Terraform   = "true"
+    Environment = "test"
+  }
+}
+
+############################################
+# EKS MODULE
+############################################
+
+module "eks" {
+  source  = "terraform-aws-modules/eks/aws"
+  version = "~> 18.0"
+
+  cluster_name                    = local.cluster_name
+  cluster_version                 = "1.29"
+  cluster_endpoint_private_access = true
+  cluster_endpoint_public_access  = true
+
+  vpc_id     = module.vpc.vpc_id
+  subnet_ids = module.vpc.private_subnets
+
+  cluster_addons = {
+    coredns = { resolve_conflicts = "OVERWRITE" }
+    kube-proxy = {}
+    vpc-cni = { resolve_conflicts = "OVERWRITE" }
+
+    aws-ebs-csi-driver = {
+      resolve_conflicts        = "OVERWRITE"
+      service_account_role_arn = module.ebs_csi_irsa_role.iam_role_arn
+    }
+  }
+
+  eks_managed_node_groups = {
+    system = {
+      min_size     = 1
+      max_size     = 3
+      desired_size = 2
+
+      instance_types = var.asg_sys_instance_types
+
+      labels = {
+        Environment = "test"
+      }
+    }
+  }
+
+  tags = {
+    Terraform   = "true"
+    Environment = "test"
+  }
+}
+
+############################################
+# EBS CSI IRSA
+############################################
+
+module "ebs_csi_irsa_role" {
+  source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
+  version = "~> 5.0"
+
+  role_name             = "${local.cluster_name}-ebs-csi"
+  attach_ebs_csi_policy = true
+
+  oidc_providers = {
+    ex = {
+      provider_arn               = module.eks.oidc_provider_arn
+      namespace_service_accounts = ["kube-system:ebs-csi-controller-sa"]
+    }
+  }
+
+  tags = {
+    Terraform   = "true"
+    Environment = "test"
+  }
+}
+
+############################################
+# EKS AUTH
+############################################
+
+module "eks_auth" {
+  source = "aidanmelen/eks-auth/aws"
+  eks    = module.eks
+
+  map_users = concat(
+    local.admin_user_map_users,
+    local.developer_user_map_users
+  )
+}
+
+############################################
+# AUTOSCALER IAM ROLE
+############################################
+
+module "iam_assumable_role_admin" {
+  source  = "terraform-aws-modules/iam/aws//modules/iam-assumable-role-with-oidc"
+  version = "~> 4.0"
+
+  create_role    = true
+  role_name      = "${local.cluster_name}-cluster-autoscaler"
+  provider_url   = replace(module.eks.cluster_oidc_issuer_url, "https://", "")
+  role_policy_arns = [aws_iam_policy.cluster_autoscaler.arn]
+
+  oidc_fully_qualified_subjects = [
+    "system:serviceaccount:${local.autoscaler_service_account_namespace}:${local.autoscaler_service_account_name}"
+  ]
+}
+
+resource "aws_iam_policy" "cluster_autoscaler" {
+  name_prefix = "${local.cluster_name}-cluster-autoscaler"
+  description = "EKS cluster autoscaler policy"
+  policy      = data.aws_iam_policy_document.cluster_autoscaler.json
+}
+
+data "aws_iam_policy_document" "cluster_autoscaler" {
+  statement {
+    effect = "Allow"
+
+    actions = [
+      "autoscaling:DescribeAutoScalingGroups",
+      "autoscaling:DescribeAutoScalingInstances",
+      "autoscaling:DescribeLaunchConfigurations",
+      "autoscaling:DescribeTags",
+      "ec2:DescribeLaunchTemplateVersions",
+    ]
+
+    resources = ["*"]
+  }
+
+  statement {
+    effect = "Allow"
+
+    actions = [
+      "autoscaling:SetDesiredCapacity",
+      "autoscaling:TerminateInstanceInAutoScalingGroup",
+      "autoscaling:UpdateAutoScalingGroup",
+    ]
+
+    resources = ["*"]
+  }
+}
+
+############################################
+# CLUSTER AUTOSCALER (HELM)
+############################################
+
+resource "helm_release" "cluster_autoscaler" {
+  name       = "cluster-autoscaler"
+  namespace  = local.autoscaler_service_account_namespace
+  repository = "https://kubernetes.github.io/autoscaler"
+  chart      = "cluster-autoscaler"
+  version    = "9.29.0"
+
+  create_namespace = true
+
+  depends_on = [module.iam_assumable_role_admin]
+
+  set {
+    name  = "cloudProvider"
+    value = "aws"
+  }
+
+  set {
+    name  = "awsRegion"
+    value = var.region
+  }
+
+  set {
+    name  = "autoDiscovery.clusterName"
+    value = module.eks.cluster_id
+  }
+
+  set {
+    name  = "autoDiscovery.enabled"
+    value = "true"
+  }
+
+  set {
+    name  = "rbac.serviceAccount.name"
+    value = local.autoscaler_service_account_name
+  }
+
+  set {
+    name  = "rbac.serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
+    value = module.iam_assumable_role_admin.iam_role_arn
+  }
+}
+
+/*
 data "aws_availability_zones" "available" {}
 
 data "aws_eks_cluster" "cluster" {
@@ -292,3 +553,4 @@ resource "helm_release" "cluster-autoscaler" {
     value = "5m"
   }
 }
+*/

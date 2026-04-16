@@ -1,4 +1,31 @@
-# Create a Security group for the RDS to allow accessing the RDS through the specified port.
+
+resource "aws_security_group" "rds_sg" {
+  name   = "${var.rds_instance_name}-sg"
+  vpc_id = module.vpc.vpc_id
+
+  ingress {
+    from_port   = 3306
+    to_port     = 3306
+    protocol    = "tcp"
+
+    # الأفضل: EKS security group
+    cidr_blocks = ["0.0.0.0/0"] # (للـ dev فقط)
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "${var.rds_instance_name}-sg"
+  }
+}
+
+
+/*# Create a Security group for the RDS to allow accessing the RDS through the specified port.
 resource "aws_security_group" "rds_sg" {
   name   = "${var.rds_cluster_name}-sg"
   vpc_id = module.vpc.vpc_id
@@ -24,3 +51,4 @@ resource "aws_security_group" "rds_sg" {
     Name = "${var.rds_cluster_name}-sg"
   }
 }
+*/
