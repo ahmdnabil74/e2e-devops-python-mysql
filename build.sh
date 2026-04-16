@@ -25,7 +25,7 @@ grafana_service_name="kube-prometheus-stack-grafana"
 helm repo update
 
 # create the cluster
-# echo "--------------------Creating EKS--------------------"
+# echo "--------------------Creating EKS-----------------------"
 # echo "--------------------Creating ECR--------------------"
 # echo "--------------------Creating EBS--------------------"
 # echo "--------------------Creating RDS--------------------"
