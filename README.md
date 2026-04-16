@@ -46,9 +46,9 @@ The application is containerized using Docker to ensure consistency across envir
 
 ---
 
-💡 Key Learnings
-Designing scalable cloud architectures on AWS
-Kubernetes deployment and orchestration
-CI/CD pipeline automation
-Infrastructure as Code using Terraform
-Monitoring production-grade systems
+##💡 Key Learnings
+1.Designing scalable cloud architectures on AWS
+2.Kubernetes deployment and orchestration
+3.CI/CD pipeline automation
+4.Infrastructure as Code using Terraform
+5.Monitoring production-grade systems
