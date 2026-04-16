@@ -46,27 +46,6 @@ The application is containerized using Docker to ensure consistency across envir
 
 ---
 
-## 🚀 How to Run Locally
-
-```bash
-# Clone repository
-git clone https://github.com/your-repo-link
-cd project-folder
-
-# Build Docker image
-docker build -t flask-app .
-
-# Run container
-docker run -p 5000:5000 flask-app
-☸️ Deployment on AWS EKS
-# Initialize Terraform
-terraform init
-
-# Apply infrastructure
-terraform apply
-
-# Deploy Kubernetes manifests
-kubectl apply -f k8s/
 💡 Key Learnings
 Designing scalable cloud architectures on AWS
 Kubernetes deployment and orchestration
