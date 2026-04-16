@@ -46,7 +46,7 @@ The application is containerized using Docker to ensure consistency across envir
 
 ---
 
-##💡 Key Learnings
+## 💡Key Learnings
 1.Designing scalable cloud architectures on AWS
 2.Kubernetes deployment and orchestration
 3.CI/CD pipeline automation
