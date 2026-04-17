@@ -65,3 +65,7 @@ variable "rds_engine_version" {
   type    = string
   default = "8.0"
 }
+variable "rds_instance_name" {
+  type    = string
+  default = "rds-instance"
+}
