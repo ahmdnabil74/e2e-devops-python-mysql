@@ -2,6 +2,9 @@
 ############################################
 # DATA SOURCES
 ############################################
+data "aws_eks_cluster" "cluster" {
+  name = module.eks.cluster_id
+}
 
 data "aws_availability_zones" "available" {}
 
@@ -38,36 +41,13 @@ locals {
   ]
 }
 
-############################################
-# PROVIDERS
-############################################
 
-provider "aws" {
-  region  = var.region
-  profile = "default"
-}
-
-provider "kubernetes" {
-  host                   = module.eks.cluster_endpoint
-  cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
-  token                  = data.aws_eks_cluster_auth.cluster.token
-}
-
-provider "helm" {
-  kubernetes {
-    host                   = module.eks.cluster_endpoint
-    cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
-    token                  = data.aws_eks_cluster_auth.cluster.token
-  }
-}
 
 ############################################
 # EIP (NAT)
 ############################################
 
 resource "aws_eip" "nat_gw_elastic_ip" {
-  domain = "vpc"
-
   tags = {
     Name        = "${local.cluster_name}-nat-eip"
     Terraform   = "true"
@@ -84,7 +64,7 @@ module "eks" {
   version = "~> 18.0"
 
   cluster_name                    = local.cluster_name
-  cluster_version                 = "1.29"
+  cluster_version                 = "1.30"
   cluster_endpoint_private_access = true
   cluster_endpoint_public_access  = true
 
@@ -225,7 +205,10 @@ resource "helm_release" "cluster_autoscaler" {
 
   create_namespace = true
 
-  depends_on = [module.iam_assumable_role_admin]
+  depends_on = [
+    module.iam_assumable_role_admin,
+    module.eks        # أو aws_eks_cluster.main — حسب اسم resource الـ EKS عندك
+  ]
 
   set {
     name  = "cloudProvider"

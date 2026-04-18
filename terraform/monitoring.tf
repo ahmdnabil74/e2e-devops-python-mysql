@@ -68,6 +68,7 @@ variable "kube_monitoring_stack_values" {
     EOF
 }
 
+
 resource "helm_release" "kube_monitoring_stack" {
   name       = "kube-prometheus-stack"
   repository = "https://prometheus-community.github.io/helm-charts"
@@ -78,4 +79,8 @@ resource "helm_release" "kube_monitoring_stack" {
   create_namespace = true
 
   values = [var.kube_monitoring_stack_values]
+
+  depends_on = [        # ← أضف السطرين دول
+    module.eks
+  ]
 }

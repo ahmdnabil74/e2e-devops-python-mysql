@@ -25,11 +25,10 @@ output "ecr_db_repository_name" {
 ############################################
 
 output "rds_endpoint" {
-  value = aws_rds_cluster.rds_cluster.endpoint
+  value = aws_db_instance.rds.endpoint
 }
-
 output "rds_port" {
-  value = aws_rds_cluster.rds_cluster.port
+  value = aws_db_instance.rds.port
 }
 
 ############################################

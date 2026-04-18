@@ -44,6 +44,7 @@ variable "asg_dev_instance_types" {
 
 variable "db_username" {
   type = string
+  default = "admin"
 }
 
 variable "db_name" {

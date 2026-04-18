@@ -8,7 +8,7 @@ aws_id="649126925327"
 namespace="todo-app"
 monitoring_ns="monitoring"
 
-# Terraform
+# ===Terraform
 echo "--------------------Terraform Apply--------------------"
 cd terraform
 terraform init
