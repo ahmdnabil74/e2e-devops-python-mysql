@@ -1,106 +1,91 @@
 #!/bin/bash
-set -e  
 
 # Variables
 cluster_name="cluster-1-test"
-region="eu-central-1"
-aws_id="649126925327"
-namespace="todo-app"
-monitoring_ns="monitoring"
-
-# ===Terraform
-echo "--------------------Terraform Apply--------------------"
-cd terraform
-terraform init
-terraform apply -auto-approve
-
-# اقرأ outputs بعد النجاح
-app_img=$(terraform output -raw ecr_app_repository_name)
+region="REGION"
+aws_id="AWS_ID"
+cd terraform 
+app_img=$(terraform output -raw ecr_app_repository_name) 
 db_img=$(terraform output -raw ecr_db_repository_name)
-rds_endpoint=$(terraform output -raw rds_endpoint)
+rds_endpoint=$(terraform output -raw rds_cluster_endpoint)
 db_username=$(terraform output -raw db_username)
 db_password=$(terraform output -raw db_password)
-
-cd ..
-
-# Validate outputs
-if [ -z "$app_img" ] || [ -z "$db_img" ]; then
-  echo "Terraform outputs are empty ❌"
-  exit 1
-fi
-
-# Images
 app_image_name="$aws_id.dkr.ecr.$region.amazonaws.com/$app_img:latest"
 db_image_name="$aws_id.dkr.ecr.$region.amazonaws.com/$db_img:latest"
+cd ..
+namespace="todo-app"
+monitoring_ns="monitoring"
+app_service_name="todo-app-service"
+alertmanager_service_name="kube-prometheus-stack-alertmanager"
+prometheus_service_name="kube-prometheus-stack-prometheus"
+grafana_service_name="kube-prometheus-stack-grafana"
+# End Variables
 
-echo "APP IMAGE: $app_image_name"
-echo "DB IMAGE: $db_image_name"
+# update helm repos
+helm repo update
 
-# Update kubeconfig
+# create the cluster
+# echo "--------------------Creating EKS--------------------"
+# echo "--------------------Creating ECR--------------------"
+# echo "--------------------Creating EBS--------------------"
+# echo "--------------------Creating RDS--------------------"
+# echo "--------------------Deploying Monitoring--------------------"
+cd terraform && \
+terraform init 
+terraform apply -auto-approve
+cd ..
+
+# update kubeconfig
 echo "--------------------Update Kubeconfig--------------------"
 aws eks update-kubeconfig --name $cluster_name --region $region
 
-# Remove old images
+# remove preious docker images
 echo "--------------------Remove Previous build--------------------"
-docker rmi -f $app_image_name 2>/dev/null || true
-docker rmi -f $db_image_name 2>/dev/null || true
+docker rmi -f $app_image_name || true
+docker rmi -f $db_image_name || true
 
-# Build images
+# build new docker image with new tag
 echo "--------------------Build new Image--------------------"
 docker build -t $app_image_name todo-app/
-docker build -f k8s/Dockerfile.mysql -t $db_image_name k8s/
+docker build -f k8s/Dockerfile.mysql -t $db_image_name k8s
 
-# Login to ECR
+# ECR Login
 echo "--------------------Login to ECR--------------------"
-aws ecr get-login-password --region $region | \
-docker login --username AWS --password-stdin $aws_id.dkr.ecr.$region.amazonaws.com
+aws ecr get-login-password --region $region | docker login --username AWS --password-stdin $aws_id.dkr.ecr.eu-central-1.amazonaws.com
 
-# Push images
+# push the latest build to dockerhub
 echo "--------------------Pushing Docker Image--------------------"
 docker push $app_image_name
 docker push $db_image_name
 
-# Namespace
-echo "--------------------Creating Namespace--------------------"
-kubectl create ns $namespace 2>/dev/null || true
+# create namespace
+echo "--------------------creating Namespace--------------------"
+kubectl create ns $namespace || true
 
-# Secrets (fixed)
-echo "--------------------Create RDS Secrets--------------------"
-kubectl delete secret rds-endpoikubectl create secret generic rds-endpoint \
-  --from-literal=endpoint="$rds_endpoint" \
-  -n $namespace \
-  --dry-run=client -o yaml | kubectl apply -f -nt -n $namespace 2>/dev/null || true
-kubectl delete secret rds-username -n $namespace 2>/dev/null || truekubectl create secret generic rds-username \
-  --from-literal=username="$db_username" \
-  -n $namespace \
-  --dry-run=client -o yaml | kubectl apply -f 
+# add rds endpoint into k8s secrets
+echo "--------------------Create RDS Secrets --------------------"
+kubectl create secret -n $namespace generic rds-endpoint --from-literal=endpoint=$rds_endpoint || true
+kubectl create secret -n $namespace generic rds-username --from-literal=username=$db_username || true
+kubectl create secret -n $namespace generic rds-password --from-literal=password=$db_password || true
 
-kubectl create secret generic rds-password \
-  --from-literal=password="$db_password" \
-  -n $namespace \
-  --dry-run=client -o yaml | kubectl apply -f 
-  
-kubectl create secret generic rds-endpoint \
-  --from-literal=endpoint="$rds_endpoint" \
-  -n $namespace
-
-kubectl create secret generic rds-username \
-  --from-literal=username="$db_username" \
-  -n $namespace
-
-kubectl create secret generic rds-password \
-  --from-literal=password="$db_password" \
-  -n $namespace
-
-# Deploy
+# deploy the application
 echo "--------------------Deploy App--------------------"
 kubectl apply -n $namespace -f k8s/
 
-# Wait
-echo "--------------------Wait--------------------"
-sleep 60
+# Wait for application to be deployed
+echo "--------------------Wait for all pods to be running--------------------"
+sleep 60s
 
-# URLs
-echo "--------------------Application URL--------------------"
-kubectl get svc -n $namespace todo-app-service \
-  -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'; echo
+# Get ingress URL
+echo "--------------------Application LoadBalancer URL--------------------"
+kubectl get svc -n ${namespace} ${app_service_name} -o=custom-columns=EXTERNAL-IP:.status.loadBalancer.ingress[*].hostname | tail -n +2
+echo "-------------------- Alertmanager LoadBalancer URL--------------------"
+kubectl get svc -n ${monitoring_ns} ${alertmanager_service_name} -o=custom-columns=EXTERNAL-IP:.status.loadBalancer.ingress[*].hostname | tail -n +2
+echo "--------------------Prometheus LoadBalancer URL--------------------"
+kubectl get svc -n ${monitoring_ns} ${prometheus_service_name} -o=custom-columns=EXTERNAL-IP:.status.loadBalancer.ingress[*].hostname | tail -n +2
+echo "--------------------Grafana LoadBalancer URL--------------------"
+kubectl get svc -n ${monitoring_ns} ${grafana_service_name} -o=custom-columns=EXTERNAL-IP:.status.loadBalancer.ingress[*].hostname | tail -n +2
+
+# Get RDS endpoint URL
+echo "--------------------RDS endpoint URL--------------------"
+echo $rds_endpoint
